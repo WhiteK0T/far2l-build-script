@@ -1,4 +1,4 @@
-# far2l-installer
+# far-build
 
 Автоматизированный bash-скрипт для сборки и установки `far2l` из исходного кода на Debian/Ubuntu-подобных системах.
 
@@ -27,13 +27,13 @@
 ## 🛠️ Установка и запуск
 ```bash
 # 1. Скачать скрипт
-curl -fsSL https://raw.githubusercontent.com/WhiteK0T/far2l-installer/main/install_far2l.sh -o install_far2l.sh
+curl -fsSL https://raw.githubusercontent.com/WhiteK0T/far2l-build-script/refs/heads/main/far-build.sh -o far-build.sh
 
 # 2. Сделать исполняемым
-chmod +x install_far2l.sh
+chmod +x far-build.sh
 
 # 3. Запустить от имени root
-sudo ./install_far2l.sh
+sudo ./far-build.sh
 ```
 
 ## ⚙️ Как это работает
