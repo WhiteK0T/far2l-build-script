@@ -18,6 +18,7 @@
 - 🗑️ Список установленных файлов сохраняется в `$INSTALL_PREFIX/share/far2l-build/install_manifest.txt` для удаления far2l
 - ⚙️ Путь установки задаётся переменной `INSTALL_PREFIX` в начале скрипта
 - 🖼️ Ключ `--gui=wx|sdl|both` для выбора графического интерфейса (wxWidgets, SDL или оба) и справка `--help`
+- 🐧 Оверлей для Gentoo (`gentoo/`) с ebuild `app-misc/far2l` 2.9.0 и 9999; на Gentoo скрипт подсказывает про него
 - 🗜️ Установка 7-Zip (`7zip` или `p7zip-full`) для работы с архивами в multiarc/arclite
 
 ### Запланировано

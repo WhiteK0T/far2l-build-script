@@ -78,6 +78,9 @@ log_info "Определение операционной системы..."
 # Поддерживаются только системы с apt
 if ! command -v apt-get >/dev/null 2>&1; then
    log_error "apt-get не найден. Скрипт поддерживает только Debian/Ubuntu-подобные системы."
+   if [[ -e /etc/gentoo-release ]]; then
+      log_info "Для Gentoo используйте ebuild из каталога gentoo/ этого репозитория (см. gentoo/README.md)"
+   fi
    exit 1
 fi
 

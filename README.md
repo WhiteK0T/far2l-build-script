@@ -50,6 +50,9 @@ sudo ./far-build.sh
 
 Для SDL дополнительно ставятся `libsdl2-dev`, `libfreetype-dev`, `libharfbuzz-dev` и `libfontconfig-dev`. Справка: `./far-build.sh --help`.
 
+## 🐧 Gentoo
+Скрипт рассчитан на `apt`. Для Gentoo в каталоге [`gentoo/`](gentoo/) лежит оверлей с ebuild `app-misc/far2l` (релиз и `9999` из git) и USE-флагами `wxwidgets`, `sdl`, `X`, `ssh`, `samba` и другими. Как подключить — в [gentoo/README.md](gentoo/README.md).
+
 ## ⚙️ Как это работает
 1. Разбирает аргументы (`--gui`, `--help`), проверяет права `root` и включает строгий режим выполнения
 2. Проверяет наличие `apt-get` и читает `/etc/os-release` (для лога)

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE pkgmetadata SYSTEM "https://www.gentoo.org/dtd/metadata.dtd">
+<pkgmetadata>
+	<maintainer type="person">
+		<email>alekssavenkov34@gmail.com</email>
+		<name>WhiteK0T</name>
+	</maintainer>
+	<use>
+		<flag name="mtp">Build the MTP plugin for accessing phones and media players</flag>
+		<flag name="nfs">Enable NFS protocol support in the NetRocks plugin</flag>
+		<flag name="samba">Enable SMB protocol support in the NetRocks plugin</flag>
+		<flag name="sdl">Build the experimental GUI backend based on <pkg>media-libs/libsdl2</pkg> (run with far2l --SDL)</flag>
+		<flag name="ssh">Enable SFTP and SCP protocol support in the NetRocks plugin</flag>
+		<flag name="ssl">Enable FTPS protocol support in the NetRocks plugin (and AWS S3 together with webdav)</flag>
+		<flag name="uchardet">Enable automatic charset detection via <pkg>app-i18n/uchardet</pkg></flag>
+		<flag name="webdav">Enable WebDAV protocol support in the NetRocks plugin (and AWS S3 together with ssl)</flag>
+		<flag name="wxwidgets">Build the GUI backend based on <pkg>x11-libs/wxGTK</pkg></flag>
+		<flag name="X">Enable X11 and Xi extensions for better keyboard and clipboard handling in terminal mode</flag>
+	</use>
+	<upstream>
+		<remote-id type="github">elfmz/far2l</remote-id>
+		<bugs-to>https://github.com/elfmz/far2l/issues</bugs-to>
+	</upstream>
+</pkgmetadata>
