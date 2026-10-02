@@ -85,6 +85,9 @@ apt-get install -y "${DEPS[@]}"
 # 4. Подготовка рабочей директории
 # ----------------------------------------------------------
 GIT_REPO="https://github.com/elfmz/far2l.git"
+INSTALL_PREFIX="/usr/local"
+# Сюда сохраняется список установленных файлов для последующего удаления
+MANIFEST_DIR="$INSTALL_PREFIX/share/far2l-build"
 
 # mktemp создаёт каталог с непредсказуемым именем и правами 0700
 BUILD_DIR=$(mktemp -d /tmp/far2l-build.XXXXXXXXXX)
@@ -117,7 +120,7 @@ cd _build
 
 # -DUSEWX=yes включает графический интерфейс на wxWidgets
 # -DCMAKE_BUILD_TYPE=Release собирает оптимизированную версию
-cmake -DUSEWX=yes -DCMAKE_BUILD_TYPE=Release ..
+cmake -DUSEWX=yes -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" ..
 
 # Определяем количество ядер для параллельной сборки
 CORES=$(nproc || echo 4)
@@ -127,8 +130,14 @@ cmake --build . -j"$CORES"
 # ----------------------------------------------------------
 # 7. Установка в систему
 # ----------------------------------------------------------
-log_info "Установка far2l в систему (по умолчанию в /usr/local)..."
+log_info "Установка far2l в систему ($INSTALL_PREFIX)..."
 cmake --install .
+
+# Сохраняем список установленных файлов: каталог сборки будет удалён,
+# а без манифеста far2l потом нельзя чисто удалить
+mkdir -p "$MANIFEST_DIR"
+cp install_manifest.txt "$MANIFEST_DIR/install_manifest.txt"
+log_info "Список установленных файлов: $MANIFEST_DIR/install_manifest.txt"
 
 # ----------------------------------------------------------
 # 8. Завершение (временные файлы удалит cleanup по trap EXIT)
