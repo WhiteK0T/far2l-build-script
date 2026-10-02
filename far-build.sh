@@ -29,10 +29,20 @@ fi
 # 2. Определение ОС и выбор зависимостей
 # ----------------------------------------------------------
 log_info "Определение операционной системы..."
-# Читаем стандартный файл идентификации дистрибутива
-OS_ID=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-OS_VERSION=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-log_info "Обнаружено: $OS_ID $OS_VERSION"
+# Поддерживаются только системы с apt
+if ! command -v apt-get >/dev/null 2>&1; then
+   log_error "apt-get не найден. Скрипт поддерживает только Debian/Ubuntu-подобные системы."
+   exit 1
+fi
+
+# Читаем стандартный файл идентификации дистрибутива (VERSION_ID может отсутствовать, например в Debian sid)
+if [[ -r /etc/os-release ]]; then
+   # shellcheck source=/dev/null
+   . /etc/os-release
+fi
+OS_ID="${ID:-unknown}"
+OS_VERSION="${VERSION_ID:-unknown}"
+log_info "Обнаружено: $OS_ID $OS_VERSION${ID_LIKE:+ (на базе: $ID_LIKE)}"
 
 # Базовые зависимости (одинаковы для всех поддерживаемых систем)
 COMMON_DEPS=(
@@ -42,27 +52,31 @@ COMMON_DEPS=(
    cmake pkg-config g++ git
 )
 
-# Динамический выбор пакета wxWidgets
-WX_PKG="libwxgtk3.2-dev" # По умолчанию: Ubuntu 24.04, Debian 12/13
-if [[ "$OS_ID" == "ubuntu" && "$OS_VERSION" == 22* ]]; then
-   WX_PKG="libwxgtk3.0-gtk3-dev"
-   log_info "Выбрана конфигурация для Ubuntu 22.04 (wxWidgets 3.0)"
-elif [[ "$OS_ID" == "debian" && ("$OS_VERSION" == 12* || "$OS_VERSION" == 13*) ]]; then
-   log_info "Выбрана конфигурация для Debian 12/13 (wxWidgets 3.2)"
-elif [[ "$OS_ID" == "ubuntu" && "$OS_VERSION" == 24* ]]; then
-   log_info "Выбрана конфигурация для Ubuntu 24.04 (wxWidgets 3.2)"
-else
-   log_warn "Неизвестная комбинация ОС ($OS_ID $OS_VERSION). Будет использован пакет по умолчанию: $WX_PKG"
-fi
-
-# Собираем финальный массив зависимостей
-DEPS=("${COMMON_DEPS[@]}" "$WX_PKG")
-
 # ----------------------------------------------------------
 # 3. Установка зависимостей
 # ----------------------------------------------------------
+export DEBIAN_FRONTEND=noninteractive
+
 log_info "Обновление списков пакетов..."
-apt-get update -y
+apt-get update
+
+# Выбор пакета wxWidgets по фактическому наличию в репозиториях,
+# а не по имени дистрибутива: работает и для Mint, Pop!_OS и т.п.
+WX_PKG=""
+for pkg in libwxgtk3.2-dev libwxgtk3.0-gtk3-dev; do
+   if apt-cache show "$pkg" >/dev/null 2>&1; then
+      WX_PKG="$pkg"
+      break
+   fi
+done
+if [[ -z "$WX_PKG" ]]; then
+   log_error "В репозиториях не найден пакет wxWidgets (libwxgtk3.2-dev / libwxgtk3.0-gtk3-dev)"
+   exit 1
+fi
+log_info "Выбран пакет wxWidgets: $WX_PKG"
+
+# Собираем финальный массив зависимостей
+DEPS=("${COMMON_DEPS[@]}" "$WX_PKG")
 
 log_info "Установка зависимостей для сборки..."
 apt-get install -y "${DEPS[@]}"
@@ -70,11 +84,22 @@ apt-get install -y "${DEPS[@]}"
 # ----------------------------------------------------------
 # 4. Подготовка рабочей директории
 # ----------------------------------------------------------
-BUILD_DIR="/tmp/far2l-build-$$"
 GIT_REPO="https://github.com/elfmz/far2l.git"
 
-log_info "Создание временной директории сборки: $BUILD_DIR"
-mkdir -p "$BUILD_DIR"
+# mktemp создаёт каталог с непредсказуемым именем и правами 0700
+BUILD_DIR=$(mktemp -d /tmp/far2l-build.XXXXXXXXXX)
+log_info "Создана временная директория сборки: $BUILD_DIR"
+
+# Удаляем временные файлы при любом завершении, в том числе при ошибке
+cleanup() {
+   local rc=$?
+   log_info "Очистка временных файлов сборки..."
+   rm -rf "$BUILD_DIR"
+   if [[ $rc -ne 0 ]]; then
+      log_error "Установка прервана с ошибкой (код $rc)"
+   fi
+}
+trap cleanup EXIT
 
 # ----------------------------------------------------------
 # 5. Клонирование репозитория
@@ -106,10 +131,7 @@ log_info "Установка far2l в систему (по умолчанию в
 cmake --install .
 
 # ----------------------------------------------------------
-# 8. Очистка и завершение
+# 8. Завершение (временные файлы удалит cleanup по trap EXIT)
 # ----------------------------------------------------------
-log_info "Очистка временных файлов сборки..."
-rm -rf "$BUILD_DIR"
-
 log_info "✅ Установка завершена успешно!"
 log_info "Для запуска введите: far2l"
