@@ -17,6 +17,52 @@ log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
+usage() {
+   cat <<USAGE
+Использование: sudo $0 [--gui=wx|sdl|both]
+
+  --gui=wx     графический интерфейс на wxWidgets (по умолчанию)
+  --gui=sdl    только графический интерфейс на SDL (экспериментальный)
+  --gui=both   оба интерфейса: wxWidgets и SDL
+  -h, --help   показать эту справку
+USAGE
+}
+
+# ----------------------------------------------------------
+# 0. Разбор аргументов (до проверки root, чтобы --help работал без sudo)
+# ----------------------------------------------------------
+GUI="wx"
+while [[ $# -gt 0 ]]; do
+   case "$1" in
+      --gui=*) GUI="${1#--gui=}" ;;
+      --gui)
+         if [[ $# -lt 2 ]]; then
+            log_error "Не указано значение для --gui"
+            exit 1
+         fi
+         GUI="$2"
+         shift
+         ;;
+      -h|--help) usage; exit 0 ;;
+      *)
+         log_error "Неизвестный аргумент: $1"
+         usage >&2
+         exit 1
+         ;;
+   esac
+   shift
+done
+
+case "$GUI" in
+   wx)   USE_WX=yes; USE_SDL=no ;;
+   sdl)  USE_WX=no;  USE_SDL=yes ;;
+   both) USE_WX=yes; USE_SDL=yes ;;
+   *)
+      log_error "Недопустимое значение --gui: $GUI (ожидается wx, sdl или both)"
+      exit 1
+      ;;
+esac
+
 # ----------------------------------------------------------
 # 1. Проверка прав root
 # ----------------------------------------------------------
@@ -52,6 +98,21 @@ COMMON_DEPS=(
    cmake pkg-config g++ git
 )
 
+# Зависимости графического интерфейса на SDL (только для --gui=sdl|both)
+SDL_DEPS=(libsdl2-dev libfreetype-dev libharfbuzz-dev libfontconfig-dev)
+
+# Печатает первый пакет из списка, который есть в репозиториях
+first_available() {
+   local pkg
+   for pkg in "$@"; do
+      if apt-cache show "$pkg" >/dev/null 2>&1; then
+         echo "$pkg"
+         return 0
+      fi
+   done
+   return 1
+}
+
 # ----------------------------------------------------------
 # 3. Установка зависимостей
 # ----------------------------------------------------------
@@ -60,23 +121,31 @@ export DEBIAN_FRONTEND=noninteractive
 log_info "Обновление списков пакетов..."
 apt-get update
 
+DEPS=("${COMMON_DEPS[@]}")
+
 # Выбор пакета wxWidgets по фактическому наличию в репозиториях,
 # а не по имени дистрибутива: работает и для Mint, Pop!_OS и т.п.
-WX_PKG=""
-for pkg in libwxgtk3.2-dev libwxgtk3.0-gtk3-dev; do
-   if apt-cache show "$pkg" >/dev/null 2>&1; then
-      WX_PKG="$pkg"
-      break
+if [[ "$USE_WX" == yes ]]; then
+   if ! WX_PKG=$(first_available libwxgtk3.2-dev libwxgtk3.0-gtk3-dev); then
+      log_error "В репозиториях не найден пакет wxWidgets (libwxgtk3.2-dev / libwxgtk3.0-gtk3-dev)"
+      exit 1
    fi
-done
-if [[ -z "$WX_PKG" ]]; then
-   log_error "В репозиториях не найден пакет wxWidgets (libwxgtk3.2-dev / libwxgtk3.0-gtk3-dev)"
-   exit 1
+   log_info "Выбран пакет wxWidgets: $WX_PKG"
+   DEPS+=("$WX_PKG")
 fi
-log_info "Выбран пакет wxWidgets: $WX_PKG"
 
-# Собираем финальный массив зависимостей
-DEPS=("${COMMON_DEPS[@]}" "$WX_PKG")
+if [[ "$USE_SDL" == yes ]]; then
+   log_info "Добавлены зависимости для SDL: ${SDL_DEPS[*]}"
+   DEPS+=("${SDL_DEPS[@]}")
+fi
+
+# 7-Zip не нужен для сборки, но используется far2l для работы с архивами (multiarc/arclite)
+if SEVENZIP_PKG=$(first_available 7zip p7zip-full); then
+   log_info "Выбран пакет 7-Zip: $SEVENZIP_PKG"
+   DEPS+=("$SEVENZIP_PKG")
+else
+   log_warn "Пакет 7-Zip (7zip / p7zip-full) не найден в репозиториях, поддержка архивов будет ограничена"
+fi
 
 log_info "Установка зависимостей для сборки..."
 apt-get install -y "${DEPS[@]}"
@@ -118,9 +187,11 @@ cd "$BUILD_DIR"
 mkdir -p _build
 cd _build
 
-# -DUSEWX=yes включает графический интерфейс на wxWidgets
+# -DUSEWX включает графический интерфейс на wxWidgets
+# -DUSESDL включает графический интерфейс на SDL
 # -DCMAKE_BUILD_TYPE=Release собирает оптимизированную версию
-cmake -DUSEWX=yes -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" ..
+log_info "Графический интерфейс: $GUI (USEWX=$USE_WX, USESDL=$USE_SDL)"
+cmake -DUSEWX="$USE_WX" -DUSESDL="$USE_SDL" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" ..
 
 # Определяем количество ядер для параллельной сборки
 CORES=$(nproc || echo 4)
@@ -143,4 +214,10 @@ log_info "Список установленных файлов: $MANIFEST_DIR/in
 # 8. Завершение (временные файлы удалит cleanup по trap EXIT)
 # ----------------------------------------------------------
 log_info "✅ Установка завершена успешно!"
-log_info "Для запуска введите: far2l"
+if [[ "$GUI" == sdl ]]; then
+   log_info "Для запуска введите: far2l --SDL"
+elif [[ "$GUI" == both ]]; then
+   log_info "Для запуска введите: far2l (wxWidgets) или far2l --SDL (SDL)"
+else
+   log_info "Для запуска введите: far2l"
+fi

@@ -17,6 +17,8 @@
 ### Добавлено
 - 🗑️ Список установленных файлов сохраняется в `$INSTALL_PREFIX/share/far2l-build/install_manifest.txt` для удаления far2l
 - ⚙️ Путь установки задаётся переменной `INSTALL_PREFIX` в начале скрипта
+- 🖼️ Ключ `--gui=wx|sdl|both` для выбора графического интерфейса (wxWidgets, SDL или оба) и справка `--help`
+- 🗜️ Установка 7-Zip (`7zip` или `p7zip-full`) для работы с архивами в multiarc/arclite
 
 ### Запланировано
 - [ ] Добавить поддержку Arch Linux (pacman)
