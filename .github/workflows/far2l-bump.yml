@@ -64,6 +64,9 @@ jobs:
             echo "Что сделано автоматически:"
             echo "- \`far2l-$OLD.ebuild\` скопирован в \`far2l-$NEW.ebuild\`"
             echo "- в \`Manifest\` добавлен \`far2l-$NEW.tar.gz\`"
+            echo "- в \`Changelog.md\` добавлена запись в раздел [Unreleased]"
+            echo
+            echo "Версия проекта после мержа не меняется: релиз выпускается отдельно через \`tools/release.sh\`."
             echo
             echo "### Перед мержем"
             echo "Проверьте изменения в CMake: новые опции или зависимости нужно отразить в ebuild (USE-флаги, DEPEND)."
@@ -87,7 +90,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$BRANCH"
-          git add gentoo/app-misc/far2l
+          git add gentoo/app-misc/far2l Changelog.md
           git commit -m "gentoo: bump app-misc/far2l to $NEW"
           git push origin "$BRANCH"
 

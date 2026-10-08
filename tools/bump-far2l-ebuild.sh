@@ -3,7 +3,8 @@
 # Проверка новой версии far2l и обновление ebuild в оверлее gentoo/
 #
 #   --check   только проверить (код 0 — актуально, 2 — есть новая версия)
-#   --bump    создать ebuild новой версии и добавить архив в Manifest
+#   --bump    создать ebuild новой версии, добавить архив в Manifest
+#             и запись в раздел [Unreleased] файла Changelog.md
 #
 # Работает и локально, и в GitHub Actions (пишет результат в $GITHUB_OUTPUT)
 # ==========================================================
@@ -24,7 +25,7 @@ usage() {
 Использование: $0 --check | --bump
 
   --check     проверить, вышла ли новая версия far2l (код выхода 2, если вышла)
-  --bump      создать ebuild новой версии и обновить Manifest
+  --bump      создать ebuild новой версии, обновить Manifest и Changelog
   -h, --help  показать эту справку
 USAGE
 }
@@ -110,6 +111,18 @@ MANIFEST="$PKG_DIR/Manifest"
 } | sort > "$TMP_DIR/Manifest"
 cp "$TMP_DIR/Manifest" "$MANIFEST"
 log_info "Manifest обновлён"
+
+# Запись в [Unreleased]: версию проекта выпускают отдельно (tools/release.sh)
+CHANGELOG="$REPO_ROOT/Changelog.md"
+ENTRY="- 🐧 Ebuild \`app-misc/far2l-$UPSTREAM_VERSION\` для Gentoo"
+if grep -qF -- "$ENTRY" "$CHANGELOG"; then
+   log_info "Запись о far2l $UPSTREAM_VERSION уже есть в Changelog"
+else
+   awk -v mode=add -v section="### Добавлено" -v entry="$ENTRY" \
+      -f "$REPO_ROOT/tools/lib/changelog.awk" "$CHANGELOG" > "$TMP_DIR/Changelog.md"
+   cp "$TMP_DIR/Changelog.md" "$CHANGELOG"
+   log_info "Changelog: добавлена запись в [Unreleased]"
+fi
 
 set_output updated true
 log_info "✅ Готово: far2l $LOCAL_VERSION -> $UPSTREAM_VERSION"
