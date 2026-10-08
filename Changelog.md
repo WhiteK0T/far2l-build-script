@@ -8,6 +8,7 @@
 
 ### Добавлено
 - 🏷️ Скрипт `tools/release.sh patch|minor|major` для выпуска версии по Semantic Versioning: переносит [Unreleased] в раздел версии, создаёт коммит и тег (есть `--dry-run`)
+- 🐧 Ebuild `app-misc/far2l-2.9.1` для Gentoo
 
 ### Изменено
 - 🔔 PR с новым ebuild far2l добавляет запись в [Unreleased]; версия проекта при мерже не меняется
