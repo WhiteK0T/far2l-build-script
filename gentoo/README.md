@@ -46,4 +46,13 @@ sudo emerge -av =app-misc/far2l-9999
 echo "app-misc/far2l sdl -wxwidgets -samba" | sudo tee /etc/portage/package.use/far2l
 ```
 
+## Обновление до новых версий far2l
+Раз в сутки GitHub Actions ([`.github/workflows/far2l-bump.yml`](../.github/workflows/far2l-bump.yml)) проверяет теги far2l. Если вышла новая версия, workflow создаёт ebuild, добавляет архив в `Manifest` и открывает PR с изменениями CMake-файлов между версиями. Перед мержем PR стоит проверить: новые опции или зависимости far2l нужно перенести в ebuild.
+
+Проверить и обновить локально можно тем же скриптом:
+```bash
+./tools/bump-far2l-ebuild.sh --check   # код выхода 2 — вышла новая версия
+./tools/bump-far2l-ebuild.sh --bump    # создать ebuild и обновить Manifest
+```
+
 Для работы с архивами рекомендуется `app-arch/7zip`. Плагин Python пока не поддерживается.

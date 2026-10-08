@@ -1,0 +1,98 @@
+name: Проверка новой версии far2l
+
+on:
+  schedule:
+    - cron: '17 6 * * *'   # каждый день в 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: far2l-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка версии и обновление ebuild
+        id: bump
+        run: ./tools/bump-far2l-ebuild.sh --bump
+
+      - name: Проверка, нет ли уже PR для этой версии
+        id: existing
+        if: steps.bump.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: bump/far2l-${{ steps.bump.outputs.new_version }}
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            echo "Ветка $BRANCH уже существует, PR не создаётся"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Создание PR
+        if: steps.bump.outputs.updated == 'true' && steps.existing.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD: ${{ steps.bump.outputs.old_version }}
+          NEW: ${{ steps.bump.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          BRANCH="bump/far2l-$NEW"
+          WORK="$RUNNER_TEMP"
+
+          # Изменения в CMake-файлах между версиями: новые опции и зависимости
+          # требуют правки ebuild, простой копии тогда недостаточно
+          git init -q "$WORK/far2l"
+          git -C "$WORK/far2l" fetch -q --depth 1 https://github.com/elfmz/far2l.git tag "v_$OLD" tag "v_$NEW"
+          git -C "$WORK/far2l" diff --stat "v_$OLD" "v_$NEW" -- '*CMakeLists.txt' '*.cmake' > "$WORK/cmake.stat"
+          git -C "$WORK/far2l" diff "v_$OLD" "v_$NEW" -- '*CMakeLists.txt' '*.cmake' | head -n 500 | head -c 50000 > "$WORK/cmake.diff"
+
+          {
+            echo "Вышла far2l **$NEW** (в оверлее была $OLD)."
+            echo
+            echo "- Релиз: https://github.com/elfmz/far2l/releases/tag/v_$NEW"
+            echo "- Все изменения: https://github.com/elfmz/far2l/compare/v_$OLD...v_$NEW"
+            echo
+            echo "Что сделано автоматически:"
+            echo "- \`far2l-$OLD.ebuild\` скопирован в \`far2l-$NEW.ebuild\`"
+            echo "- в \`Manifest\` добавлен \`far2l-$NEW.tar.gz\`"
+            echo
+            echo "### Перед мержем"
+            echo "Проверьте изменения в CMake: новые опции или зависимости нужно отразить в ebuild (USE-флаги, DEPEND)."
+            echo
+            if [[ -s "$WORK/cmake.stat" ]]; then
+              echo '```'
+              cat "$WORK/cmake.stat"
+              echo '```'
+              echo
+              echo '<details><summary>Diff CMake-файлов (до 500 строк)</summary>'
+              echo
+              echo '```diff'
+              cat "$WORK/cmake.diff"
+              echo '```'
+              echo '</details>'
+            else
+              echo "CMake-файлы между версиями не менялись."
+            fi
+          } > "$WORK/pr-body.md"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add gentoo/app-misc/far2l
+          git commit -m "gentoo: bump app-misc/far2l to $NEW"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --base "${{ github.event.repository.default_branch }}" \
+            --head "$BRANCH" \
+            --title "gentoo: app-misc/far2l $NEW" \
+            --body-file "$WORK/pr-body.md"
