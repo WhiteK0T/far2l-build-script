@@ -2,7 +2,8 @@
 # ==========================================================
 # Выпуск новой версии проекта по правилам Semantic Versioning:
 # переносит [Unreleased] из Changelog.md в раздел новой версии,
-# создаёт коммит «release: X.Y.Z» и тег vX.Y.Z. Push — вручную.
+# создаёт коммит «release: X.Y.Z» и тег vX.Y.Z. Push — вручную;
+# после push тега workflow release.yml создаёт GitHub Release.
 # ==========================================================
 
 set -euo pipefail
@@ -107,4 +108,4 @@ git commit -q -m "release: $VERSION"
 git tag -a "v$VERSION" -m "far2l-build $VERSION"
 
 log_info "✅ Создан коммит «release: $VERSION» и тег v$VERSION"
-log_info "Опубликовать: git push origin HEAD --tags"
+log_info "Опубликовать: git push origin HEAD --tags (GitHub Release создастся автоматически)"

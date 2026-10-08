@@ -1,0 +1,63 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег (например, v1.3.0) или all — для всех тегов без релиза'
+        required: true
+        default: all
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # нужны все теги, чтобы найти предыдущую версию
+
+      - name: Создание релизов
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            TAGS="$GITHUB_REF_NAME"
+          elif [[ "$INPUT_TAG" == all ]]; then
+            TAGS=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+          else
+            TAGS="$INPUT_TAG"
+          fi
+
+          # Отметку Latest получает только самая старшая версия
+          NEWEST=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+
+          for TAG in $TAGS; do
+            if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "::error::Нет тега вида vX.Y.Z: $TAG"
+              exit 1
+            fi
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              echo "Релиз $TAG уже существует, пропускаю"
+              continue
+            fi
+
+            ./tools/release-notes.sh "$TAG" > "$RUNNER_TEMP/notes.md"
+            LATEST=false
+            [[ "$TAG" == "$NEWEST" ]] && LATEST=true
+
+            gh release create "$TAG" \
+              --verify-tag \
+              --title "far2l-build ${TAG#v}" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --latest="$LATEST"
+            echo "Создан релиз $TAG"
+          done
