@@ -19,13 +19,14 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 usage() {
    cat <<USAGE
-Использование: sudo $0 [--gui=wx|sdl|both] [--ref=ТЕГ|ВЕТКА]
+Использование: sudo $0 [--gui=wx|sdl|both] [--ref=ТЕГ|ВЕТКА] [--python]
 
   --gui=wx     графический интерфейс на wxWidgets (по умолчанию)
   --gui=sdl    только графический интерфейс на SDL (экспериментальный)
   --gui=both   оба интерфейса: wxWidgets и SDL
   --ref=REF    тег или ветка far2l для сборки, например v_2.9.1 или master
                (по умолчанию — последний стабильный тег v_X.Y.Z)
+  --python     собрать плагин Python для расширений far2l на Python
   -h, --help   показать эту справку
 USAGE
 }
@@ -35,6 +36,7 @@ USAGE
 # ----------------------------------------------------------
 GUI="wx"
 REF=""
+USE_PYTHON=no
 while [[ $# -gt 0 ]]; do
    case "$1" in
       --gui=*) GUI="${1#--gui=}" ;;
@@ -55,6 +57,7 @@ while [[ $# -gt 0 ]]; do
          REF="$2"
          shift
          ;;
+      --python) USE_PYTHON=yes ;;
       -h|--help) usage; exit 0 ;;
       *)
          log_error "Неизвестный аргумент: $1"
@@ -116,6 +119,9 @@ COMMON_DEPS=(
 # Зависимости графического интерфейса на SDL (только для --gui=sdl|both)
 SDL_DEPS=(libsdl2-dev libfreetype-dev libharfbuzz-dev libfontconfig-dev)
 
+# Зависимости плагина Python (только для --python): cffi нужен far2l во время работы
+PYTHON_DEPS=(python3-dev python3-cffi)
+
 # Печатает первый пакет из списка, который есть в репозиториях
 first_available() {
    local pkg
@@ -152,6 +158,11 @@ fi
 if [[ "$USE_SDL" == yes ]]; then
    log_info "Добавлены зависимости для SDL: ${SDL_DEPS[*]}"
    DEPS+=("${SDL_DEPS[@]}")
+fi
+
+if [[ "$USE_PYTHON" == yes ]]; then
+   log_info "Добавлены зависимости для плагина Python: ${PYTHON_DEPS[*]}"
+   DEPS+=("${PYTHON_DEPS[@]}")
 fi
 
 # 7-Zip не нужен для сборки, но используется far2l для работы с архивами (multiarc/arclite)
@@ -241,10 +252,11 @@ log_info "Конфигурация проекта через CMake..."
 
 # -DUSEWX включает графический интерфейс на wxWidgets
 # -DUSESDL включает графический интерфейс на SDL
+# -DPYTHON включает плагин Python
 # -DCMAKE_BUILD_TYPE=Release собирает оптимизированную версию
-log_info "Графический интерфейс: $GUI (USEWX=$USE_WX, USESDL=$USE_SDL)"
+log_info "Графический интерфейс: $GUI (USEWX=$USE_WX, USESDL=$USE_SDL), плагин Python: $USE_PYTHON"
 as_build_user cmake -S "$SRC_DIR" -B "$SRC_DIR/_build" \
-   -DUSEWX="$USE_WX" -DUSESDL="$USE_SDL" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
+   -DUSEWX="$USE_WX" -DUSESDL="$USE_SDL" -DPYTHON="$USE_PYTHON" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
 
 # Определяем количество ядер для параллельной сборки
 CORES=$(nproc || echo 4)
@@ -274,4 +286,8 @@ elif [[ "$GUI" == both ]]; then
    log_info "Для запуска введите: far2l (wxWidgets) или far2l --SDL (SDL)"
 else
    log_info "Для запуска введите: far2l"
+fi
+if [[ "$USE_PYTHON" == yes ]]; then
+   log_info "Свои Python-плагины кладите в ~/.config/far2l/plugins/python"
+   log_info "Примеры и описание: $INSTALL_PREFIX/share/far2l/Plugins/python/plugins"
 fi

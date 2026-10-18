@@ -10,6 +10,7 @@
 - 📦 GitHub Release для каждой версии: workflow `release.yml` создаёт релиз с текстом из Changelog после push тега; для старых тегов — ручной запуск
 - 🐍 USE-флаг `python` в ebuild: плагин Python для расширений far2l
 - 🔀 Ключ `--ref=ТЕГ|ВЕТКА` для сборки конкретной версии far2l, например `--ref=master`
+- 🐍 Ключ `--python` в `far-build.sh`: сборка плагина Python (ставит `python3-dev` и `python3-cffi`)
 
 ### Изменено
 - 🏷️ По умолчанию собирается последний стабильный тег far2l (`v_X.Y.Z`) вместо нестабильной ветки `master`
