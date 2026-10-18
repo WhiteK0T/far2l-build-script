@@ -20,6 +20,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 usage() {
    cat <<USAGE
 Использование: sudo $0 [--gui=wx|sdl|both] [--ref=ТЕГ|ВЕТКА] [--python]
+                    [--prefix=DIR | -i]
 
   --gui=wx     графический интерфейс на wxWidgets (по умолчанию)
   --gui=sdl    только графический интерфейс на SDL (экспериментальный)
@@ -27,6 +28,9 @@ usage() {
   --ref=REF    тег или ветка far2l для сборки, например v_2.9.1 или master
                (по умолчанию — последний стабильный тег v_X.Y.Z)
   --python     собрать плагин Python для расширений far2l на Python
+  --prefix=DIR каталог установки (по умолчанию /usr/local)
+  -i, --interactive
+               спросить каталог установки перед сборкой
   -h, --help   показать эту справку
 USAGE
 }
@@ -37,6 +41,26 @@ USAGE
 GUI="wx"
 REF=""
 USE_PYTHON=no
+DEFAULT_PREFIX="/usr/local"
+INSTALL_PREFIX=""
+INTERACTIVE=no
+
+# Проверяет и нормализует путь установки: только абсолютный путь, без «/» в конце
+normalize_prefix() {
+   local path="$1"
+   while [[ "$path" == */ && "$path" != / ]]; do
+      path="${path%/}"
+   done
+   if [[ "$path" != /* ]]; then
+      log_error "Путь установки должен быть абсолютным (начинаться с /): $1"
+      return 1
+   fi
+   if [[ "$path" == / ]]; then
+      log_error "Нельзя устанавливать в корень файловой системы, укажите каталог, например /opt/far2l"
+      return 1
+   fi
+   echo "$path"
+}
 while [[ $# -gt 0 ]]; do
    case "$1" in
       --gui=*) GUI="${1#--gui=}" ;;
@@ -58,6 +82,16 @@ while [[ $# -gt 0 ]]; do
          shift
          ;;
       --python) USE_PYTHON=yes ;;
+      --prefix=*) INSTALL_PREFIX=$(normalize_prefix "${1#--prefix=}") || exit 1 ;;
+      --prefix)
+         if [[ $# -lt 2 ]]; then
+            log_error "Не указано значение для --prefix"
+            exit 1
+         fi
+         INSTALL_PREFIX=$(normalize_prefix "$2") || exit 1
+         shift
+         ;;
+      -i|--interactive) INTERACTIVE=yes ;;
       -h|--help) usage; exit 0 ;;
       *)
          log_error "Неизвестный аргумент: $1"
@@ -85,6 +119,23 @@ if [[ $EUID -ne 0 ]]; then
    log_error "Скрипт должен быть запущен с правами root (используйте sudo)"
    exit 1
 fi
+
+# Выбор пути установки: спрашиваем только с -i, иначе — --prefix или /usr/local
+if [[ "$INTERACTIVE" == yes ]]; then
+   if [[ ! -t 0 ]]; then
+      log_error "Для -i/--interactive нужен терминал; без него используйте --prefix=DIR"
+      exit 1
+   fi
+   default="${INSTALL_PREFIX:-$DEFAULT_PREFIX}"
+   while true; do
+      read -r -p "Путь установки far2l [$default]: " answer
+      if INSTALL_PREFIX=$(normalize_prefix "${answer:-$default}"); then
+         break
+      fi
+   done
+fi
+INSTALL_PREFIX="${INSTALL_PREFIX:-$DEFAULT_PREFIX}"
+log_info "Путь установки: $INSTALL_PREFIX"
 
 # ----------------------------------------------------------
 # 2. Определение ОС и выбор зависимостей
@@ -180,7 +231,6 @@ apt-get install -y "${DEPS[@]}"
 # 4. Подготовка рабочей директории
 # ----------------------------------------------------------
 GIT_REPO="https://github.com/elfmz/far2l.git"
-INSTALL_PREFIX="/usr/local"
 # Сюда сохраняется список установленных файлов для последующего удаления
 MANIFEST_DIR="$INSTALL_PREFIX/share/far2l-build"
 
@@ -286,6 +336,20 @@ elif [[ "$GUI" == both ]]; then
    log_info "Для запуска введите: far2l (wxWidgets) или far2l --SDL (SDL)"
 else
    log_info "Для запуска введите: far2l"
+fi
+# Нестандартный путь: подсказываем, как сделать far2l доступным из PATH
+if [[ ":$PATH:" != *":$INSTALL_PREFIX/bin:"* ]]; then
+   log_warn "Каталог $INSTALL_PREFIX/bin не входит в PATH. Добавьте в ~/.profile:"
+   log_warn "   export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
+   log_warn "или запускайте far2l по полному пути: $INSTALL_PREFIX/bin/far2l"
+fi
+# Ярлыки и иконки окружение рабочего стола ищет в XDG_DATA_DIRS
+# (по умолчанию /usr/local/share:/usr/share), нестандартный DIR/share туда не входит
+DESKTOP_FILES=("$INSTALL_PREFIX"/share/applications/far2l*.desktop)
+if [[ -e "${DESKTOP_FILES[0]}" && ":${XDG_DATA_DIRS:-/usr/local/share:/usr/share}:" != *":$INSTALL_PREFIX/share:"* ]]; then
+   log_warn "Ярлыки far2l установлены в $INSTALL_PREFIX/share/applications и не появятся в меню."
+   log_warn "Чтобы они появились, добавьте в ~/.profile и перезайдите в сеанс:"
+   log_warn "   export XDG_DATA_DIRS=\"$INSTALL_PREFIX/share:\${XDG_DATA_DIRS:-/usr/local/share:/usr/share}\""
 fi
 if [[ "$USE_PYTHON" == yes ]]; then
    log_info "Свои Python-плагины кладите в ~/.config/far2l/plugins/python"
