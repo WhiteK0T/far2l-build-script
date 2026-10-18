@@ -21,6 +21,7 @@ usage() {
    cat <<USAGE
 Использование: sudo $0 [--gui=wx|sdl|both] [--ref=ТЕГ|ВЕТКА] [--python]
                     [--prefix=DIR | -i]
+       sudo $0 --uninstall [--prefix=DIR | -i]
 
   --gui=wx     графический интерфейс на wxWidgets (по умолчанию)
   --gui=sdl    только графический интерфейс на SDL (экспериментальный)
@@ -30,7 +31,9 @@ usage() {
   --python     собрать плагин Python для расширений far2l на Python
   --prefix=DIR каталог установки (по умолчанию /usr/local)
   -i, --interactive
-               спросить каталог установки и подтверждение замены прежней установки
+               спросить каталог установки, подтверждение замены прежней
+               установки и удаления пакетов far2l из репозитория
+  --uninstall  удалить far2l, установленный этим скриптом (из --prefix или /usr/local)
 
 Повторный запуск переустанавливает far2l: после успешной сборки файлы прежней
 установки удаляются по сохранённому списку, затем ставится новая версия.
@@ -47,6 +50,7 @@ USE_PYTHON=no
 DEFAULT_PREFIX="/usr/local"
 INSTALL_PREFIX=""
 INTERACTIVE=no
+ACTION=install
 
 # Проверяет и нормализует путь установки: только абсолютный путь, без «/» в конце
 normalize_prefix() {
@@ -95,6 +99,7 @@ while [[ $# -gt 0 ]]; do
          shift
          ;;
       -i|--interactive) INTERACTIVE=yes ;;
+      --uninstall) ACTION=uninstall ;;
       -h|--help) usage; exit 0 ;;
       *)
          log_error "Неизвестный аргумент: $1"
@@ -196,6 +201,24 @@ uninstall_far2l() {
    fi
 }
 
+if [[ "$ACTION" == uninstall ]]; then
+   if [[ ! -f "$MANIFEST" ]]; then
+      log_error "В $INSTALL_PREFIX нет списка файлов far2l: $MANIFEST"
+      if [[ -e "$INSTALL_PREFIX/bin/far2l" ]]; then
+         log_error "far2l там есть, но установлен не этим скриптом или его версией до 1.1.0 — удалите его вручную"
+      fi
+      exit 1
+   fi
+   if [[ "$INTERACTIVE" == yes ]] && ! ask_yes_no "Удалить far2l из $INSTALL_PREFIX?" n; then
+      log_warn "Удаление отменено"
+      exit 0
+   fi
+   log_info "Удаление far2l из $INSTALL_PREFIX..."
+   uninstall_far2l "$INSTALL_PREFIX"
+   log_info "✅ far2l удалён. Настройки в ~/.config/far2l не тронуты"
+   exit 0
+fi
+
 # ----------------------------------------------------------
 # 2. Определение ОС и выбор зависимостей
 # ----------------------------------------------------------
@@ -258,6 +281,19 @@ if [[ -f "$MANIFEST" ]]; then
    REPLACE_OLD=yes
 elif [[ -e "$INSTALL_PREFIX/bin/far2l" ]]; then
    log_warn "В $INSTALL_PREFIX уже есть far2l без списка файлов: новые файлы запишутся поверх, устаревшие останутся"
+fi
+
+# Пакеты far2l из репозитория дистрибутива ставят свою копию в /usr/bin
+mapfile -t APT_FAR2L < <(dpkg-query -W -f='${db:Status-Status} ${Package}\n' 'far2l*' 2>/dev/null \
+   | awk '$1 == "installed" {print $2}')
+REMOVE_APT=no
+if [[ ${#APT_FAR2L[@]} -gt 0 ]]; then
+   log_warn "Установлены пакеты far2l из репозитория: ${APT_FAR2L[*]}"
+   if [[ "$INTERACTIVE" == yes ]] && ask_yes_no "Удалить их после успешной сборки?" n; then
+      REMOVE_APT=yes
+   else
+      log_warn "Две копии far2l будут мешать друг другу. Удалить пакеты: sudo apt-get remove ${APT_FAR2L[*]}"
+   fi
 fi
 
 export DEBIAN_FRONTEND=noninteractive
@@ -390,6 +426,10 @@ if [[ "$REPLACE_OLD" == yes ]]; then
    log_info "Удаление предыдущей установки far2l из $INSTALL_PREFIX..."
    uninstall_far2l "$INSTALL_PREFIX"
 fi
+if [[ "$REMOVE_APT" == yes ]]; then
+   log_info "Удаление пакетов far2l из репозитория: ${APT_FAR2L[*]}"
+   apt-get remove -y "${APT_FAR2L[@]}"
+fi
 
 # Установка — единственный шаг сборки, которому нужен root
 log_info "Установка far2l в систему ($INSTALL_PREFIX)..."
@@ -418,6 +458,19 @@ if [[ ":$PATH:" != *":$INSTALL_PREFIX/bin:"* ]]; then
    log_warn "   export PATH=\"$INSTALL_PREFIX/bin:\$PATH\""
    log_warn "или запускайте far2l по полному пути: $INSTALL_PREFIX/bin/far2l"
 fi
+# Другая копия far2l раньше в PATH будет запускаться вместо новой
+hash -r
+FIRST_FAR2L=$(type -P far2l || true)
+if [[ -n "$FIRST_FAR2L" && "$FIRST_FAR2L" != "$INSTALL_PREFIX/bin/far2l" ]]; then
+   log_warn "Команда far2l сейчас запускает другую копию: $FIRST_FAR2L"
+   OTHER_PREFIX=$(dirname "$(dirname "$FIRST_FAR2L")")
+   if [[ -f "$OTHER_PREFIX/share/far2l-build/install_manifest.txt" ]]; then
+      log_warn "Её установил этот скрипт. Удалить: sudo $0 --uninstall --prefix=$OTHER_PREFIX"
+   elif OTHER_PKG=$(dpkg -S "$FIRST_FAR2L" 2>/dev/null); then
+      log_warn "Она из пакета ${OTHER_PKG%%:*}. Удалить: sudo apt-get remove ${OTHER_PKG%%:*}"
+   fi
+fi
+
 # Ярлыки и иконки окружение рабочего стола ищет в XDG_DATA_DIRS
 # (по умолчанию /usr/local/share:/usr/share), нестандартный DIR/share туда не входит
 DESKTOP_FILES=("$INSTALL_PREFIX"/share/applications/far2l*.desktop)
