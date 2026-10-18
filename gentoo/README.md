@@ -40,6 +40,7 @@ sudo emerge -av =app-misc/far2l-9999
 | `webdav` | ✅ | NetRocks: WebDAV (вместе с `ssl` — ещё и AWS S3) |
 | `ssl` | ✅ | NetRocks: FTPS (вместе с `webdav` — ещё и AWS S3) |
 | `mtp` | ✅ | Плагин MTP для телефонов и плееров |
+| `python` | — | Плагин Python для расширений far2l на Python (нужен `dev-python/cffi`) |
 
 Пример: только SDL, без wxWidgets и Samba:
 ```bash
@@ -55,4 +56,6 @@ echo "app-misc/far2l sdl -wxwidgets -samba" | sudo tee /etc/portage/package.use/
 ./tools/bump-far2l-ebuild.sh --bump    # создать ebuild, обновить Manifest и Changelog
 ```
 
-Для работы с архивами рекомендуется `app-arch/7zip`. Плагин Python пока не поддерживается.
+Для работы с архивами рекомендуется `app-arch/7zip`.
+
+Плагин Python собирается под одну версию Python — ту, что выбрана в `PYTHON_SINGLE_TARGET` (по умолчанию из профиля). Свои плагины кладите в `~/.config/far2l/plugins/python`, примеры и описание (`read-en.txt`) — в `/usr/share/far2l/Plugins/python/plugins`.

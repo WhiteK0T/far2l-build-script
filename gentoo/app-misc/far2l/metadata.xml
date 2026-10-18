@@ -8,6 +8,7 @@
 	<use>
 		<flag name="mtp">Build the MTP plugin for accessing phones and media players</flag>
 		<flag name="nfs">Enable NFS protocol support in the NetRocks plugin</flag>
+		<flag name="python">Build the Python plugin for writing far2l extensions in Python (uses <pkg>dev-python/cffi</pkg>)</flag>
 		<flag name="samba">Enable SMB protocol support in the NetRocks plugin</flag>
 		<flag name="sdl">Build the experimental GUI backend based on <pkg>media-libs/libsdl2</pkg> (run with far2l --SDL)</flag>
 		<flag name="ssh">Enable SFTP and SCP protocol support in the NetRocks plugin</flag>

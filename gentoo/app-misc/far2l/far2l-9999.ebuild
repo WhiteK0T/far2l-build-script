@@ -3,9 +3,11 @@
 
 EAPI=8
 
+# The plugin embeds CPython via its C API: no PyPy or free-threaded builds
+PYTHON_COMPAT=( python3_{12..14} )
 WX_GTK_VER="3.2-gtk3"
 
-inherit cmake optfeature wxwidgets xdg
+inherit cmake optfeature python-single-r1 wxwidgets xdg
 
 DESCRIPTION="Linux port of FAR Manager v2: console and GUI file manager"
 HOMEPAGE="https://github.com/elfmz/far2l"
@@ -23,13 +25,15 @@ fi
 # MIT: bundled Colorer library; unRAR: bundled unrar sources in multiarc
 LICENSE="GPL-2 LGPL-2.1+ MIT unRAR"
 SLOT="0"
-IUSE="+mtp +nfs +samba sdl +ssh +ssl +uchardet +webdav +wxwidgets +X"
+IUSE="+mtp +nfs python +samba sdl +ssh +ssl +uchardet +webdav +wxwidgets +X"
+REQUIRED_USE="python? ( ${PYTHON_REQUIRED_USE} )"
 
 DEPEND="
 	app-arch/libarchive:=
 	dev-libs/libxml2:=
 	mtp? ( virtual/libusb:1 )
 	nfs? ( net-fs/libnfs:= )
+	python? ( ${PYTHON_DEPS} )
 	samba? ( net-fs/samba )
 	sdl? (
 		media-libs/fontconfig
@@ -47,8 +51,15 @@ DEPEND="
 		x11-libs/libXi
 	)
 "
-RDEPEND="${DEPEND}"
+RDEPEND="
+	${DEPEND}
+	python? ( $(python_gen_cond_dep 'dev-python/cffi[${PYTHON_USEDEP}]') )
+"
 BDEPEND="virtual/pkgconfig"
+
+pkg_setup() {
+	use python && python-single-r1_pkg_setup
+}
 
 src_configure() {
 	local aws=no
@@ -67,16 +78,21 @@ src_configure() {
 		-DNR_WEBDAV=$(usex webdav)
 		-DNR_OPENSSL=$(usex ssl)
 		-DNR_AWS=${aws}
-		# Python plugin needs runtime cffi setup, not supported here yet
-		-DPYTHON=no
-		# Python is only probed to generate AppStream metainfo; avoid automagic
-		-DCMAKE_DISABLE_FIND_PACKAGE_Python3=ON
+		-DPYTHON=$(usex python)
 		$(cmake_use_find_package ssh LibSSH)
 		$(cmake_use_find_package samba Libsmbclient)
 		$(cmake_use_find_package nfs LibNfs)
 		$(cmake_use_find_package webdav LibNEON)
 		$(cmake_use_find_package ssl OpenSSL)
 	)
+
+	if use python; then
+		# The plugin dlopen()s libpython of the selected implementation
+		mycmakeargs+=( -DPython3_EXECUTABLE="${PYTHON}" )
+	else
+		# Python is only probed to generate AppStream metainfo; avoid automagic
+		mycmakeargs+=( -DCMAKE_DISABLE_FIND_PACKAGE_Python3=ON )
+	fi
 
 	if use wxwidgets; then
 		setup-wxwidgets
@@ -86,11 +102,23 @@ src_configure() {
 	cmake_src_configure
 }
 
+src_install() {
+	cmake_src_install
+
+	# Plugin modules live outside site-packages, byte-compile them here
+	use python && python_optimize "${ED}"/usr/lib/far2l/Plugins/python
+}
+
 pkg_postinst() {
 	xdg_pkg_postinst
 
 	optfeature "archive handling in multiarc and arclite plugins" app-arch/7zip app-arch/p7zip
 	optfeature "clipboard access in terminal mode without X support" x11-misc/xclip x11-misc/xsel
+
+	if use python; then
+		elog "Put your Python plugins into ~/.config/far2l/plugins/python"
+		elog "Examples and docs: ${EPREFIX}/usr/share/far2l/Plugins/python/plugins"
+	fi
 
 	if use sdl; then
 		elog "To start far2l with the SDL backend, run: far2l --SDL"
