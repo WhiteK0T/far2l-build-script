@@ -30,7 +30,10 @@ usage() {
   --python     собрать плагин Python для расширений far2l на Python
   --prefix=DIR каталог установки (по умолчанию /usr/local)
   -i, --interactive
-               спросить каталог установки перед сборкой
+               спросить каталог установки и подтверждение замены прежней установки
+
+Повторный запуск переустанавливает far2l: после успешной сборки файлы прежней
+установки удаляются по сохранённому списку, затем ставится новая версия.
   -h, --help   показать эту справку
 USAGE
 }
@@ -137,6 +140,62 @@ fi
 INSTALL_PREFIX="${INSTALL_PREFIX:-$DEFAULT_PREFIX}"
 log_info "Путь установки: $INSTALL_PREFIX"
 
+# Сюда сохраняется список установленных файлов для переустановки и удаления
+MANIFEST_DIR="$INSTALL_PREFIX/share/far2l-build"
+MANIFEST="$MANIFEST_DIR/install_manifest.txt"
+
+# Вопрос «да/нет» (только в режиме -i); $2 — ответ по умолчанию: y или n
+ask_yes_no() {
+   local hint answer
+   if [[ "$2" == y ]]; then hint="Y/n"; else hint="y/N"; fi
+   while true; do
+      read -r -p "$1 [$hint]: " answer
+      case "${answer:-$2}" in
+         [yYдД]*) return 0 ;;
+         [nNнН]*) return 1 ;;
+      esac
+   done
+}
+
+# Удаляет far2l по списку установленных файлов из каталога $1.
+# Удаляются только пути внутри $1, из каталогов — только пустые с «far2l» в пути
+uninstall_far2l() {
+   local prefix="$1"
+   local manifest="$prefix/share/far2l-build/install_manifest.txt"
+   local file dir removed=0 skipped=0
+   local -a dirs=()
+
+   while IFS= read -r file || [[ -n "$file" ]]; do
+      [[ -z "$file" ]] && continue
+      if [[ "$file" != "$prefix"/* || "$file" == *"/../"* || "$file" == */.. ]]; then
+         log_warn "Пропущен путь вне $prefix: $file"
+         skipped=$((skipped + 1))
+         continue
+      fi
+      if [[ -f "$file" || -L "$file" ]]; then
+         rm -f -- "$file"
+         removed=$((removed + 1))
+      fi
+      dirs+=("$(dirname "$file")")
+   done < "$manifest"
+   rm -f -- "$manifest"
+   dirs+=("$prefix/share/far2l-build")
+
+   # Обратная сортировка ставит вложенные каталоги раньше родительских;
+   # общие каталоги вроде share/applications не трогаем
+   while IFS= read -r dir; do
+      while [[ "$dir" == "$prefix"/* && "/${dir#"$prefix"/}" == */far2l* ]]; do
+         rmdir -- "$dir" 2>/dev/null || break
+         dir=$(dirname "$dir")
+      done
+   done < <(printf '%s\n' "${dirs[@]}" | sort -ru)
+
+   log_info "Удалено файлов: $removed"
+   if [[ $skipped -gt 0 ]]; then
+      log_warn "Пропущено подозрительных путей: $skipped"
+   fi
+}
+
 # ----------------------------------------------------------
 # 2. Определение ОС и выбор зависимостей
 # ----------------------------------------------------------
@@ -188,6 +247,19 @@ first_available() {
 # ----------------------------------------------------------
 # 3. Установка зависимостей
 # ----------------------------------------------------------
+# Прежняя установка этим скриптом в тот же каталог заменяется после успешной сборки
+REPLACE_OLD=no
+if [[ -f "$MANIFEST" ]]; then
+   log_info "Найдена установка far2l в $INSTALL_PREFIX: после успешной сборки она будет заменена"
+   if [[ "$INTERACTIVE" == yes ]] && ! ask_yes_no "Заменить установленный far2l?" y; then
+      log_warn "Установка отменена"
+      exit 0
+   fi
+   REPLACE_OLD=yes
+elif [[ -e "$INSTALL_PREFIX/bin/far2l" ]]; then
+   log_warn "В $INSTALL_PREFIX уже есть far2l без списка файлов: новые файлы запишутся поверх, устаревшие останутся"
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 
 log_info "Обновление списков пакетов..."
@@ -231,9 +303,6 @@ apt-get install -y "${DEPS[@]}"
 # 4. Подготовка рабочей директории
 # ----------------------------------------------------------
 GIT_REPO="https://github.com/elfmz/far2l.git"
-# Сюда сохраняется список установленных файлов для последующего удаления
-MANIFEST_DIR="$INSTALL_PREFIX/share/far2l-build"
-
 # Сборка идёт от обычного пользователя: root нужен только для apt и установки.
 # При запуске через sudo это тот, кто вызвал sudo, иначе — nobody
 BUILD_USER="${SUDO_USER:-}"
@@ -316,6 +385,12 @@ as_build_user cmake --build "$SRC_DIR/_build" -j"$CORES"
 # ----------------------------------------------------------
 # 7. Установка в систему
 # ----------------------------------------------------------
+# Прежнюю версию убираем только сейчас: если сборка упала, far2l у пользователя остаётся
+if [[ "$REPLACE_OLD" == yes ]]; then
+   log_info "Удаление предыдущей установки far2l из $INSTALL_PREFIX..."
+   uninstall_far2l "$INSTALL_PREFIX"
+fi
+
 # Установка — единственный шаг сборки, которому нужен root
 log_info "Установка far2l в систему ($INSTALL_PREFIX)..."
 cmake --install "$SRC_DIR/_build"
@@ -323,8 +398,8 @@ cmake --install "$SRC_DIR/_build"
 # Сохраняем список установленных файлов: каталог сборки будет удалён,
 # а без манифеста far2l потом нельзя чисто удалить
 mkdir -p "$MANIFEST_DIR"
-cp "$SRC_DIR/_build/install_manifest.txt" "$MANIFEST_DIR/install_manifest.txt"
-log_info "Список установленных файлов: $MANIFEST_DIR/install_manifest.txt"
+cp "$SRC_DIR/_build/install_manifest.txt" "$MANIFEST"
+log_info "Список установленных файлов: $MANIFEST"
 
 # ----------------------------------------------------------
 # 8. Завершение (временные файлы удалит cleanup по trap EXIT)
