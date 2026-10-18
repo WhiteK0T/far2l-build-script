@@ -19,11 +19,13 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 usage() {
    cat <<USAGE
-Использование: sudo $0 [--gui=wx|sdl|both]
+Использование: sudo $0 [--gui=wx|sdl|both] [--ref=ТЕГ|ВЕТКА]
 
   --gui=wx     графический интерфейс на wxWidgets (по умолчанию)
   --gui=sdl    только графический интерфейс на SDL (экспериментальный)
   --gui=both   оба интерфейса: wxWidgets и SDL
+  --ref=REF    тег или ветка far2l для сборки, например v_2.9.1 или master
+               (по умолчанию — последний стабильный тег v_X.Y.Z)
   -h, --help   показать эту справку
 USAGE
 }
@@ -32,6 +34,7 @@ USAGE
 # 0. Разбор аргументов (до проверки root, чтобы --help работал без sudo)
 # ----------------------------------------------------------
 GUI="wx"
+REF=""
 while [[ $# -gt 0 ]]; do
    case "$1" in
       --gui=*) GUI="${1#--gui=}" ;;
@@ -41,6 +44,15 @@ while [[ $# -gt 0 ]]; do
             exit 1
          fi
          GUI="$2"
+         shift
+         ;;
+      --ref=*) REF="${1#--ref=}" ;;
+      --ref)
+         if [[ $# -lt 2 ]]; then
+            log_error "Не указано значение для --ref"
+            exit 1
+         fi
+         REF="$2"
          shift
          ;;
       -h|--help) usage; exit 0 ;;
@@ -179,8 +191,22 @@ trap cleanup EXIT
 # ----------------------------------------------------------
 # 5. Клонирование репозитория
 # ----------------------------------------------------------
+# По умолчанию — последний стабильный тег: авторы far2l считают master нестабильным
+if [[ -z "$REF" ]]; then
+   REF=$(git ls-remote --tags --refs "$GIT_REPO" 'v_*' \
+      | sed -n 's#.*refs/tags/\(v_[0-9]\+\.[0-9]\+\.[0-9]\+\)$#\1#p' \
+      | sort -V | tail -n 1)
+   if [[ -z "$REF" ]]; then
+      log_error "Не удалось определить последний стабильный тег far2l"
+      exit 1
+   fi
+   log_info "Версия far2l: $REF (последний стабильный тег)"
+else
+   log_info "Версия far2l: $REF (задано через --ref)"
+fi
+
 log_info "Клонирование исходного кода far2l..."
-git clone --depth 1 "$GIT_REPO" "$BUILD_DIR"
+git clone --depth 1 --branch "$REF" "$GIT_REPO" "$BUILD_DIR"
 
 # ----------------------------------------------------------
 # 6. Конфигурация и сборка через CMake
