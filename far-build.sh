@@ -173,8 +173,25 @@ INSTALL_PREFIX="/usr/local"
 # Сюда сохраняется список установленных файлов для последующего удаления
 MANIFEST_DIR="$INSTALL_PREFIX/share/far2l-build"
 
-# mktemp создаёт каталог с непредсказуемым именем и правами 0700
+# Сборка идёт от обычного пользователя: root нужен только для apt и установки.
+# При запуске через sudo это тот, кто вызвал sudo, иначе — nobody
+BUILD_USER="${SUDO_USER:-}"
+if [[ -z "$BUILD_USER" || "$BUILD_USER" == root ]]; then
+   BUILD_USER="nobody"
+fi
+if ! id "$BUILD_USER" >/dev/null 2>&1; then
+   log_error "Пользователь для сборки не найден: $BUILD_USER"
+   exit 1
+fi
+if ! command -v runuser >/dev/null 2>&1; then
+   log_error "Не найдена команда runuser (пакет util-linux)"
+   exit 1
+fi
+
+# mktemp создаёт каталог с непредсказуемым именем и правами 0700;
+# владельцем делаем пользователя сборки, права 0700 сохраняются
 BUILD_DIR=$(mktemp -d /tmp/far2l-build.XXXXXXXXXX)
+SRC_DIR="$BUILD_DIR/far2l"
 log_info "Создана временная директория сборки: $BUILD_DIR"
 
 # Удаляем временные файлы при любом завершении, в том числе при ошибке
@@ -187,6 +204,15 @@ cleanup() {
    fi
 }
 trap cleanup EXIT
+
+chown "$BUILD_USER:" "$BUILD_DIR"
+log_info "Сборка будет выполняться от пользователя: $BUILD_USER"
+
+# HOME указывает в каталог сборки: у nobody своего HOME нет,
+# а git не должен читать настройки из /root
+as_build_user() {
+   runuser -u "$BUILD_USER" -- env HOME="$BUILD_DIR" "$@"
+}
 
 # ----------------------------------------------------------
 # 5. Клонирование репозитория
@@ -206,37 +232,36 @@ else
 fi
 
 log_info "Клонирование исходного кода far2l..."
-git clone --depth 1 --branch "$REF" "$GIT_REPO" "$BUILD_DIR"
+as_build_user git clone --depth 1 --branch "$REF" "$GIT_REPO" "$SRC_DIR"
 
 # ----------------------------------------------------------
 # 6. Конфигурация и сборка через CMake
 # ----------------------------------------------------------
 log_info "Конфигурация проекта через CMake..."
-cd "$BUILD_DIR"
-mkdir -p _build
-cd _build
 
 # -DUSEWX включает графический интерфейс на wxWidgets
 # -DUSESDL включает графический интерфейс на SDL
 # -DCMAKE_BUILD_TYPE=Release собирает оптимизированную версию
 log_info "Графический интерфейс: $GUI (USEWX=$USE_WX, USESDL=$USE_SDL)"
-cmake -DUSEWX="$USE_WX" -DUSESDL="$USE_SDL" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" ..
+as_build_user cmake -S "$SRC_DIR" -B "$SRC_DIR/_build" \
+   -DUSEWX="$USE_WX" -DUSESDL="$USE_SDL" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX"
 
 # Определяем количество ядер для параллельной сборки
 CORES=$(nproc || echo 4)
 log_info "Сборка far2l (используется $CORES потоков)..."
-cmake --build . -j"$CORES"
+as_build_user cmake --build "$SRC_DIR/_build" -j"$CORES"
 
 # ----------------------------------------------------------
 # 7. Установка в систему
 # ----------------------------------------------------------
+# Установка — единственный шаг сборки, которому нужен root
 log_info "Установка far2l в систему ($INSTALL_PREFIX)..."
-cmake --install .
+cmake --install "$SRC_DIR/_build"
 
 # Сохраняем список установленных файлов: каталог сборки будет удалён,
 # а без манифеста far2l потом нельзя чисто удалить
 mkdir -p "$MANIFEST_DIR"
-cp install_manifest.txt "$MANIFEST_DIR/install_manifest.txt"
+cp "$SRC_DIR/_build/install_manifest.txt" "$MANIFEST_DIR/install_manifest.txt"
 log_info "Список установленных файлов: $MANIFEST_DIR/install_manifest.txt"
 
 # ----------------------------------------------------------
